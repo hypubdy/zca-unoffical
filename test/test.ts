@@ -24,6 +24,11 @@ listener.on("error", (error) => {
     console.error("Error:", error);
 });
 
+
+listener.on("voip", (data) => {
+    console.log(data);
+});
+
 listener.on("message", (message) => {
     console.log("Message:", message.threadId, message.data.content);
     switch (message.type) {

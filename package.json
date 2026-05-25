@@ -23,14 +23,6 @@
         "lint:fix": "eslint . --fix",
         "prepare": "husky"
     },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/RFS-ADRENO/zca-js.git"
-    },
-    "homepage": "https://github.com/RFS-ADRENO/zca-js",
-    "bugs": {
-        "url": "https://github.com/RFS-ADRENO/zca-js/issues"
-    },
     "engines": {
         "node": ">=18.0.0"
     },
@@ -39,7 +31,7 @@
         "zalo",
         "api"
     ],
-    "author": "RFS-ADRENO, truong9c2208, JustKemForFun",
+    "author": "",
     "license": "MIT",
     "dependencies": {
         "crypto-js": "^4.2.0",

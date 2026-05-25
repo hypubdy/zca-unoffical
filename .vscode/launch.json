@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug feat.ts",
+            "runtimeExecutable": "bun",
+            "runtimeArgs": ["--inspect-brk"],
+            "program": "${workspaceFolder}/test/test.ts",
+            "console": "integratedTerminal"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug listen (via feat.ts)",
+            "runtimeExecutable": "bun",
+            "runtimeArgs": ["--inspect-brk"],
+            "program": "${workspaceFolder}/test/feat.ts",
+            "console": "integratedTerminal"
+        }
+    ]
+}

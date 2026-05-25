@@ -15,6 +15,77 @@ type UploadEventData = {
     fileId: string;
 };
 
+export type VoipP2PCandidate = {
+    ip: string;
+    port: number;
+    type: number;
+};
+
+export type VoipServerAddr = {
+    bonus: number;
+    rtp: string;
+    rtcp: string;
+    rtpIPv6: string;
+    rtcpIPv6: string;
+    tpType: number;
+    rtt?: number;
+    recv?: number;
+    spTcp?: number;
+};
+
+export type VoipExtendData = {
+    callType: number;
+    p2p: VoipP2PCandidate[];
+    serverAddr: VoipServerAddr[];
+    serverResult: VoipServerAddr[];
+    srtpMode: number;
+    srtcp: number;
+    spTcp: number;
+    tpType: number;
+    packetMode: number;
+    platform: number;
+    sP2P: number;
+    newZrtc: number;
+    gccAudio: number;
+    gccMode: number;
+    gccSVLR: number;
+    maxFT: number;
+    negoVidQual: number;
+    supportCallBusy: number;
+    supportHevcDecode: number;
+    video: { codec: { name: string; payload: number }[] };
+};
+
+export type VoipParams = {
+    rtpSerIp: string;
+    rtpIP: string;
+    rtcpIP: string;
+    settings: Record<string, unknown>;
+    fec: { enable: number };
+    extendData: VoipExtendData;
+};
+
+export type VoipData = {
+    act: string;
+    callId: string;
+    uidFrom: string;
+    uidTo: string;
+    uidN: string;
+    status: string;
+    ts: string;
+    session: string;
+    sessId: string;
+    rtpAddress: string;
+    rtcpAddress: string;
+    codec: { name: string; payload: number; frmPtime: number; dynamicFptime: number }[];
+    params: VoipParams;
+    avatar: string;
+    userId: number;
+    platform: number;
+    protocol: number;
+    Dname: string;
+};
+
 export type WsPayload<T = Record<string, unknown>> = {
     version: number;
     cmd: number;
@@ -50,6 +121,7 @@ interface ListenerEvents {
     friend_event: [data: FriendEvent];
     group_event: [data: GroupEvent];
     cipher_key: [key: string];
+    voip: [data: VoipData];
 }
 
 export class Listener extends EventEmitter<ListenerEvents> {
@@ -293,7 +365,41 @@ export class Listener extends EventEmitter<ListenerEvents> {
                     const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
                     const { controls } = parsedData;
                     for (const control of controls) {
-                        if (control.content.act_type == "file_done") {
+                        if (control.content.act_type == "voip") {
+
+                            const d = JSON.parse(control.content.data);
+                            const rawParams = JSON.parse(d.params);
+                            console.log(d)
+                            const params: VoipParams = {
+                                rtpSerIp: rawParams.rtpSerIp,
+                                rtpIP: d.rtpIP,
+                                rtcpIP: d.rtcpIP,
+                                settings: rawParams.settings,
+                                fec: rawParams.fec,
+                                extendData: JSON.parse(rawParams.extendData),
+                            };
+                            const voipData: VoipData = {
+                                act: control.content.act,
+                                callId: d.callId,
+                                uidFrom: d.uidFrom,
+                                uidTo: d.uidTo,
+                                uidN: d.uidN,
+                                status: d.status,
+                                ts: d.ts,
+                                session: d.session,
+                                sessId: d.sessId,
+                                rtpAddress: d.rtpAddress,
+                                rtcpAddress: d.rtcpAddress,
+                                codec: JSON.parse(d.codec),
+                                params,
+                                avatar: d.avatar,
+                                userId: d.userId,
+                                platform: d.platform,
+                                protocol: d.protocol,
+                                Dname: d.Dname,
+                            };
+                            this.emit("voip", voipData);
+                        } else if (control.content.act_type == "file_done") {
                             const data = {
                                 fileUrl: control.content.data.url,
                                 fileId: control.content.fileId,
@@ -341,6 +447,7 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                 typeof friendEventData == "object" &&
                                 "topic" in friendEventData &&
                                 typeof friendEventData.topic == "object" &&
+                                friendEventData.topic !== null &&
                                 "params" in friendEventData.topic
                             ) {
                                 friendEventData.topic.params = JSON.parse(`${friendEventData.topic.params}`);
@@ -407,6 +514,13 @@ export class Listener extends EventEmitter<ListenerEvents> {
                     const { actions } = parsedData;
 
                     for (const action of actions) {
+                        let data
+                        try {
+                            data = JSON.parse(`{${action.data}}`);
+                        } catch (e) {
+                            console.log('parsing json err', e);
+                        }
+                        if (!data) return;
                         if (action.act_type == "typing") {
                             const data = JSON.parse(`{${action.data}}`);
                             if (action.act == "typing") {
