@@ -1,5 +1,5 @@
 {
-    "name": "zca-js",
+    "name": "@hypubdy/zca-js",
     "version": "2.1.2",
     "description": "Unofficial Zalo API for JavaScript",
     "main": "dist/index.js",
