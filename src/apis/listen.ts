@@ -15,75 +15,13 @@ type UploadEventData = {
     fileId: string;
 };
 
-export type VoipP2PCandidate = {
-    ip: string;
-    port: number;
-    type: number;
-};
-
-export type VoipServerAddr = {
-    bonus: number;
-    rtp: string;
-    rtcp: string;
-    rtpIPv6: string;
-    rtcpIPv6: string;
-    tpType: number;
-    rtt?: number;
-    recv?: number;
-    spTcp?: number;
-};
-
-export type VoipExtendData = {
-    callType: number;
-    p2p: VoipP2PCandidate[];
-    serverAddr: VoipServerAddr[];
-    serverResult: VoipServerAddr[];
-    srtpMode: number;
-    srtcp: number;
-    spTcp: number;
-    tpType: number;
-    packetMode: number;
-    platform: number;
-    sP2P: number;
-    newZrtc: number;
-    gccAudio: number;
-    gccMode: number;
-    gccSVLR: number;
-    maxFT: number;
-    negoVidQual: number;
-    supportCallBusy: number;
-    supportHevcDecode: number;
-    video: { codec: { name: string; payload: number }[] };
-};
-
-export type VoipParams = {
-    rtpSerIp: string;
-    rtpIP: string;
-    rtcpIP: string;
-    settings: Record<string, unknown>;
-    fec: { enable: number };
-    extendData: VoipExtendData;
-};
-
-export type VoipData = {
-    act: string;
-    callId: string;
-    uidFrom: string;
-    uidTo: string;
-    uidN: string;
-    status: string;
-    ts: string;
-    session: string;
-    sessId: string;
-    rtpAddress: string;
-    rtcpAddress: string;
-    codec: { name: string; payload: number; frmPtime: number; dynamicFptime: number }[];
-    params: VoipParams;
-    avatar: string;
-    userId: number;
-    platform: number;
-    protocol: number;
-    Dname: string;
+export type CallerInfo = {
+  userId?: number;
+  name?: string;
+  avatar?: string;
+  callId?: string | number;
+  timestamp?: number;
+  type: 'callin' | 'cancel' | 'join';
 };
 
 export type WsPayload<T = Record<string, unknown>> = {
@@ -121,7 +59,7 @@ interface ListenerEvents {
     friend_event: [data: FriendEvent];
     group_event: [data: GroupEvent];
     cipher_key: [key: string];
-    voip: [data: VoipData];
+    voip: [data: { caller: CallerInfo, rawData: Record<string, unknown> }];
 }
 
 export class Listener extends EventEmitter<ListenerEvents> {
@@ -366,39 +304,94 @@ export class Listener extends EventEmitter<ListenerEvents> {
                     const { controls } = parsedData;
                     for (const control of controls) {
                         if (control.content.act_type == "voip") {
+                            try {   
+                                const d = JSON.parse(control.content.data);
+                                function safeJsonParse<T = unknown>(value: unknown): T | null {
+                                    if (typeof value !== "string") return value as T;
+                                    try {
+                                        return JSON.parse(value);
+                                    } catch {
+                                        return null;
+                                    }
+                                }
 
-                            const d = JSON.parse(control.content.data);
-                            const rawParams = JSON.parse(d.params);
-                            console.log(d)
-                            const params: VoipParams = {
-                                rtpSerIp: rawParams.rtpSerIp,
-                                rtpIP: d.rtpIP,
-                                rtcpIP: d.rtcpIP,
-                                settings: rawParams.settings,
-                                fec: rawParams.fec,
-                                extendData: JSON.parse(rawParams.extendData),
-                            };
-                            const voipData: VoipData = {
-                                act: control.content.act,
-                                callId: d.callId,
-                                uidFrom: d.uidFrom,
-                                uidTo: d.uidTo,
-                                uidN: d.uidN,
-                                status: d.status,
-                                ts: d.ts,
-                                session: d.session,
-                                sessId: d.sessId,
-                                rtpAddress: d.rtpAddress,
-                                rtcpAddress: d.rtcpAddress,
-                                codec: JSON.parse(d.codec),
-                                params,
-                                avatar: d.avatar,
-                                userId: d.userId,
-                                platform: d.platform,
-                                protocol: d.protocol,
-                                Dname: d.Dname,
-                            };
-                            this.emit("voip", voipData);
+                                function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
+                                    if (raw.timeJoinCall !== undefined) {
+                                        return {
+                                            userId: raw.userId as number | undefined,
+                                            callId: raw.callId as string | number | undefined,
+                                            timestamp: Number(raw.timeJoinCall),
+                                            type: "join",
+                                        };
+                                    }
+                                    const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};
+                                    return {
+                                        userId: (raw.uidN ?? raw.uidFrom ?? params.userId ?? raw.uidTo) as number | undefined,
+                                        name: params.Dname as string | undefined,
+                                        avatar: params.avatar as string | undefined,
+                                        callId: (params.id ?? raw.callId) as string | number | undefined,
+                                        timestamp: Number(params.ts ?? raw.ts),
+                                        type: act === "cancel" ? "cancel" : "callin",
+                                    };
+                                }
+
+                                const caller = getCallerInfo(d, control.content.act);
+                                console.log(control.content.act)
+                                this.emit("voip", { caller, rawData: d });
+
+                                const params = safeJsonParse<Record<string, unknown>>(d.params) ?? {};
+                                const callId = String(d.callId ?? d.id ?? "0");
+                                const ts = String(params.ts ?? d.ts ?? Date.now());
+                                if (d.status === '0') {
+                                    const voipMsg: TMessage = {
+                                        actionId: callId,
+                                        msgId: callId,
+                                        cliMsgId: ts,
+                                        msgType: "chat.recommended",
+                                        uidFrom: String(d.uidFrom ?? d.fromId ?? d.hostCall ?? "0"),
+                                        idTo: String(d.uidTo ?? d.receiverId ?? d.groupId ?? "0"),
+                                        dName: params.Dname ?? d.Dname ?? "",
+                                        ts,
+                                        status: 1,
+                                        content: {
+                                            title: "sendBubbleMessage",
+                                            description: "Cuộc gọi",
+                                            href: "",
+                                            thumb: "",
+                                            childnumber: 0,
+                                            action: "recommened.callin",
+                                            params: JSON.stringify({
+                                                duration: 0,
+                                                reason: 2,
+                                                isCaller: 0,
+                                                isEnableCallback: 1,
+                                                calltype: d.callType ?? 0,
+                                            }),
+                                        },
+                                        notify: "1",
+                                        ttl: 0,
+                                        userId: "0",
+                                        uin: "0",
+                                        topOut: "0",
+                                        topOutTimeOut: "0",
+                                        topOutImprTimeOut: "0",
+                                        propertyExt: undefined,
+                                        paramsExt: { countUnread: 1, containType: 0, platformType: 3 },
+                                        cmd: 501,
+                                        st: 3,
+                                        at: 0,
+                                        realMsgId: "0",
+                                        quote: undefined,
+                                    };
+                                    const voipMsgObject = new UserMessage(this.ctx.uid, voipMsg);
+                                    this.onMessageCallback(voipMsgObject);
+                                    this.emit("message", voipMsgObject);
+                                }
+                            }
+                            catch (e) {
+                                console.log('error in parse call data', e);
+                            }
+
                         } else if (control.content.act_type == "file_done") {
                             const data = {
                                 fileUrl: control.content.data.url,
