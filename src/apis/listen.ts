@@ -310,10 +310,10 @@ export class Listener extends EventEmitter<ListenerEvents> {
                             try {
                                 const d = JSON.parse(control.content.data);
                                 const isGroup = d.groupId !== undefined;
-                                if ((d.status === 0 && !d.avatar) || d.status === undefined) return;
                                 const caller = getCallerInfo(d, control.content.act);
-                                this.emit("voip", { caller, rawData: d }); 
-
+                                if ((d.status == 0 && !caller.avatar) || d.status === undefined) return;
+                                if (caller.type !== 'callin') return;
+                                this.emit("voip", { caller, rawData: d });
                                 const params = safeJsonParse<Record<string, unknown>>(d.params) ?? {};
                                 const callId = String(d.callId ?? d.id ?? "0");
                                 const ts = String(params.ts ?? d.ts ?? Date.now());
@@ -359,12 +359,12 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                     if (isGroup) {
                                         const groupMsg: TGroupMessage = {
                                             ...baseMsg,
-                                            uidFrom: String(d.fromId ?? d.hostCall ?? "0"),
-                                            idTo: String(d.groupId),
+                                            uidFrom: String(d.groupNoiseId ?? d.hostCall ?? "0"),
+                                            idTo: String(d.groupNoiseId),
                                             cmd: 521,
                                             mentions: undefined,
                                         };
-                                        voipMsgObject = new GroupMessage(this.ctx.uid, groupMsg);
+                                        voipMsgObject = new GroupMessage(d.groupNoiseId, groupMsg);
                                     } else {
                                         const userMsg: TMessage = {
                                             ...baseMsg,
@@ -665,7 +665,7 @@ function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
             type: act === "cancel" ? "cancel" : String(raw.status) === "4" ? "end" : "callin",
             mediaType: getMediaType(raw.callType),
             isGroup: true,
-            groupId: raw.groupId as number | undefined,
+            groupId: raw.groupNoiseId as number | undefined,
         };
     }
     const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};

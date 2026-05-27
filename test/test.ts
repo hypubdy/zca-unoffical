@@ -28,8 +28,8 @@ listener.on("voip", (data) => {
     console.log(data);
 });
 
-listener.on("message", () => {
-    // console.log("Message:", message);
+listener.on("message", (msg) => {
+    console.log("Message:", msg);
 });
 
 listener.start();
