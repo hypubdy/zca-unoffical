@@ -318,6 +318,7 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                 const callId = String(d.callId ?? d.id ?? "0");
                                 const ts = String(params.ts ?? d.ts ?? Date.now());
                                 if (String(d.status) === '0') {
+
                                     const baseMsg = {
                                         actionId: callId,
                                         msgId: callId,
@@ -364,6 +365,7 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                             cmd: 521,
                                             mentions: undefined,
                                         };
+
                                         voipMsgObject = new GroupMessage(d.groupNoiseId, groupMsg);
                                     } else {
                                         const userMsg: TMessage = {
@@ -372,9 +374,11 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                             idTo: String(d.uidTo ?? d.receiverId ?? "0"),
                                             cmd: 501,
                                         };
+
                                         voipMsgObject = new UserMessage(this.ctx.uid, userMsg);
                                     }
                                     this.onMessageCallback(voipMsgObject);
+
                                     this.emit("message", voipMsgObject);
                                 }
                             }
@@ -646,16 +650,8 @@ function getMediaType(callType: unknown): 'audio' | 'video' {
 }
 
 function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
-    if (raw.timeJoinCall !== undefined) {
-        return {
-            fromId: raw.userId as number | undefined,
-            callId: (raw.callId ?? raw.id) as string | number | undefined,
-            timestamp: Number(raw.timeJoinCall),
-            type: "join",
-            mediaType: getMediaType(raw.callType),
-        };
-    }
     if (raw.groupId !== undefined) {
+        const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};
         return {
             fromId: (raw.fromId ?? raw.hostCall) as number | undefined,
             name: raw.groupName as string | undefined,
@@ -663,12 +659,14 @@ function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
             callId: (raw.id ?? raw.callId) as string | number | undefined,
             timestamp: Number(raw.ts),
             type: act === "cancel" ? "cancel" : String(raw.status) === "4" ? "end" : "callin",
-            mediaType: getMediaType(raw.callType),
+            mediaType: getMediaType(raw.callType ?? params.callType),
             isGroup: true,
             groupId: raw.groupNoiseId as number | undefined,
         };
     }
+
     const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};
+    const extendData = safeJsonParse<Record<string, unknown>>(params.extendData) ?? {};
     return {
         fromId: raw.uidN as number | undefined,
         name: params.Dname as string | undefined,
@@ -677,7 +675,7 @@ function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
         timestamp: Number(params.ts ?? raw.ts),
         type: act === "cancel" ? "cancel" : String(raw.status) === "3" ? "end" : "callin",
         isGroup: false,
-        mediaType: getMediaType(params.callType ?? raw.callType),
+        mediaType: getMediaType(params.callType ?? raw.callType ?? extendData.callType),
     };
 }
 
