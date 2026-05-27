@@ -649,7 +649,7 @@ function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
     if (raw.timeJoinCall !== undefined) {
         return {
             fromId: raw.userId as number | undefined,
-            callId: raw.callId as string | number | undefined,
+            callId: (raw.callId ?? raw.id) as string | number | undefined,
             timestamp: Number(raw.timeJoinCall),
             type: "join",
             mediaType: getMediaType(raw.callType),
@@ -673,7 +673,7 @@ function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
         fromId: raw.uidN as number | undefined,
         name: params.Dname as string | undefined,
         avatar: params.avatar as string | undefined,
-        callId: (params.id ?? raw.callId) as string | number | undefined,
+        callId: (params.id ?? raw.callId ?? raw.id) as string | number | undefined,
         timestamp: Number(params.ts ?? raw.ts),
         type: act === "cancel" ? "cancel" : String(raw.status) === "3" ? "end" : "callin",
         isGroup: false,
