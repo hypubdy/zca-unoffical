@@ -21,7 +21,7 @@ export type CallerInfo = {
   avatar?: string;
   callId?: string | number;
   timestamp?: number;
-  type: 'callin' | 'cancel' | 'join';
+  type: 'callin' | 'cancel' | 'join' | 'end';
   mediaType: 'audio' | 'video';
   isGroup?: boolean;
   groupId?: number;
@@ -307,74 +307,23 @@ export class Listener extends EventEmitter<ListenerEvents> {
                     const { controls } = parsedData;
                     for (const control of controls) {
                         if (control.content.act_type == "voip") {
-                            try {   
+                            try {
                                 const d = JSON.parse(control.content.data);
-                                function safeJsonParse<T = unknown>(value: unknown): T | null {
-                                    if (typeof value !== "string") return value as T;
-                                    try {
-                                        return JSON.parse(value);
-                                    } catch {
-                                        return null;
-                                    }
-                                }
-
                                 const isGroup = d.groupId !== undefined;
-
-                                function getMediaType(callType: unknown): 'audio' | 'video' {
-                                    return Number(callType) === 1 ? "video" : "audio";
-                                }
-
-                                function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
-                                    if (raw.timeJoinCall !== undefined) {
-                                        return {
-                                            fromId: raw.userId as number | undefined,
-                                            callId: raw.callId as string | number | undefined,
-                                            timestamp: Number(raw.timeJoinCall),
-                                            type: "join",
-                                            mediaType: getMediaType(raw.callType),
-                                        };
-                                    }
-                                    if (isGroup) {
-                                        return {
-                                            fromId: (raw.fromId ?? raw.hostCall) as number | undefined,
-                                            name: raw.groupName as string | undefined,
-                                            avatar: raw.groupAvatar as string | undefined,
-                                            callId: (raw.id ?? raw.callId) as string | number | undefined,
-                                            timestamp: Number(raw.ts),
-                                            type: act === "cancel" ? "cancel" : "callin",
-                                            mediaType: getMediaType(raw.callType),
-                                            isGroup: true,
-                                            groupId: raw.groupId as number | undefined,
-                                        };
-                                    }
-                                    const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};
-                                    return {
-                                        fromId: (raw.uidN) as number | undefined,
-                                        name: params.Dname as string | undefined,
-                                        avatar: params.avatar as string | undefined,
-                                        callId: (params.id ?? raw.callId) as string | number | undefined,
-                                        timestamp: Number(params.ts ?? raw.ts),
-                                        type: act === "cancel" ? "cancel" : "callin",
-                                        isGroup: false,
-                                        mediaType: getMediaType(params.callType ?? raw.callType),
-                                    };
-                                }
-
+                                if ((d.status === 0 && !d.avatar) || d.status === undefined) return;
                                 const caller = getCallerInfo(d, control.content.act);
                                 this.emit("voip", { caller, rawData: d }); 
 
                                 const params = safeJsonParse<Record<string, unknown>>(d.params) ?? {};
                                 const callId = String(d.callId ?? d.id ?? "0");
                                 const ts = String(params.ts ?? d.ts ?? Date.now());
-                                if (d.status === '0') {
-                                    const voipMsg: TMessage = {
+                                if (String(d.status) === '0') {
+                                    const baseMsg = {
                                         actionId: callId,
-                                        msgId: ts,
+                                        msgId: callId,
                                         cliMsgId: ts,
                                         msgType: "chat.recommended",
-                                        uidFrom: String(isGroup ? d.groupId : d.uidN),
-                                        idTo: String(d.uidTo ?? d.receiverId ?? d.groupId ?? "0"),
-                                        dName: params.groupName ?? d.Dname ?? "",
+                                        dName: String(d.Dname ?? params.Dname ?? ""),
                                         ts,
                                         status: 1,
                                         content: {
@@ -400,16 +349,31 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                         topOutTimeOut: "0",
                                         topOutImprTimeOut: "0",
                                         propertyExt: undefined,
-                                        
                                         paramsExt: { countUnread: 1, containType: 0, platformType: 3 },
-                                        cmd: 501,
                                         st: 3,
                                         at: 0,
                                         realMsgId: "0",
                                         quote: undefined,
                                     };
-                                    const threadId = isGroup ? d.groupId : d.uidN;
-                                    const voipMsgObject = new UserMessage(threadId, voipMsg);
+                                    let voipMsgObject;
+                                    if (isGroup) {
+                                        const groupMsg: TGroupMessage = {
+                                            ...baseMsg,
+                                            uidFrom: String(d.fromId ?? d.hostCall ?? "0"),
+                                            idTo: String(d.groupId),
+                                            cmd: 521,
+                                            mentions: undefined,
+                                        };
+                                        voipMsgObject = new GroupMessage(this.ctx.uid, groupMsg);
+                                    } else {
+                                        const userMsg: TMessage = {
+                                            ...baseMsg,
+                                            uidFrom: String(d.uidN ?? "0"),
+                                            idTo: String(d.uidTo ?? d.receiverId ?? "0"),
+                                            cmd: 501,
+                                        };
+                                        voipMsgObject = new UserMessage(this.ctx.uid, userMsg);
+                                    }
                                     this.onMessageCallback(voipMsgObject);
                                     this.emit("message", voipMsgObject);
                                 }
@@ -666,6 +630,55 @@ export class Listener extends EventEmitter<ListenerEvents> {
         this.cipherKey = undefined;
         if (this.pingInterval) clearInterval(this.pingInterval);
     }
+}
+
+function safeJsonParse<T = unknown>(value: unknown): T | null {
+    if (typeof value !== "string") return value as T;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return null;
+    }
+}
+
+function getMediaType(callType: unknown): 'audio' | 'video' {
+    return Number(callType) === 1 ? "video" : "audio";
+}
+
+function getCallerInfo(raw: Record<string, unknown>, act: string): CallerInfo {
+    if (raw.timeJoinCall !== undefined) {
+        return {
+            fromId: raw.userId as number | undefined,
+            callId: raw.callId as string | number | undefined,
+            timestamp: Number(raw.timeJoinCall),
+            type: "join",
+            mediaType: getMediaType(raw.callType),
+        };
+    }
+    if (raw.groupId !== undefined) {
+        return {
+            fromId: (raw.fromId ?? raw.hostCall) as number | undefined,
+            name: raw.groupName as string | undefined,
+            avatar: raw.groupAvatar as string | undefined,
+            callId: (raw.id ?? raw.callId) as string | number | undefined,
+            timestamp: Number(raw.ts),
+            type: act === "cancel" ? "cancel" : String(raw.status) === "4" ? "end" : "callin",
+            mediaType: getMediaType(raw.callType),
+            isGroup: true,
+            groupId: raw.groupId as number | undefined,
+        };
+    }
+    const params = safeJsonParse<Record<string, unknown>>(raw.params) ?? {};
+    return {
+        fromId: raw.uidN as number | undefined,
+        name: params.Dname as string | undefined,
+        avatar: params.avatar as string | undefined,
+        callId: (params.id ?? raw.callId) as string | number | undefined,
+        timestamp: Number(params.ts ?? raw.ts),
+        type: act === "cancel" ? "cancel" : String(raw.status) === "3" ? "end" : "callin",
+        isGroup: false,
+        mediaType: getMediaType(params.callType ?? raw.callType),
+    };
 }
 
 function getHeader(buffer: Buffer) {

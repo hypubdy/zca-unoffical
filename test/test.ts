@@ -1,8 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 
-import { Reactions, Zalo } from "../src/index.js";
-import { ThreadType } from "../src/models/index.js";
+import { Zalo } from "../src/index.js";
 const zalo = new Zalo({
     selfListen: true,
     logging: true,
@@ -29,77 +28,8 @@ listener.on("voip", (data) => {
     console.log(data);
 });
 
-listener.on("message", (message) => {
-    console.log("Message:", message.threadId, message.data.content);
-    switch (message.type) {
-        case ThreadType.User:
-            api.addReaction(Reactions.HAHA, message).then(console.log);
-            if (!message.data.content || typeof message.data.content != "string") return;
-            if (!message.isSelf) {
-                switch (message.data.content) {
-                    case "reply": {
-                        api.sendMessage(
-                            {
-                                msg: "reply",
-                                quote: message.data,
-                            },
-                            message.threadId,
-                            message.type,
-                        ).then(console.log);
-                        break;
-                    }
-                    case "ping": {
-                        api.sendMessage("pong", message.threadId).then(console.log);
-                        break;
-                    }
-                    default: {
-                        const args = message.data.content.split(/\s+/);
-                        if (args[0] == "sticker" && args[1]) {
-                            api.getStickers(args[1]).then(async (stickerIds) => {
-                                const random = stickerIds[Math.floor(Math.random() * stickerIds.length)];
-                                const sticker = await api.getStickersDetail(random);
-                                console.log("Sending sticker:", sticker[0]);
-
-                                if (random) api.sendSticker(sticker[0], message.threadId).then(console.log);
-                                else api.sendMessage("No sticker found", message.threadId).then(console.log);
-                            });
-                        }
-                        break;
-                    }
-                }
-            } else {
-                const args = message.data.content.split(/\s+/);
-                if (args[0] == "find" && args[1]) {
-                    api.findUser(args[1]).then(console.log);
-                } else if (args[0] == "get") {
-                    api.sendMessage(
-                        {
-                            msg: "hi",
-                            attachments: [path.resolve("./test/a.png")],
-                        },
-                        message.threadId,
-                        message.type,
-                    ).then(console.log);
-                }
-            }
-            break;
-
-        case ThreadType.Group:
-            if (!message.isSelf) {
-                switch (message.data.content) {
-                    case "ping": {
-                        api.sendMessage("pong", message.threadId, message.type).then(console.log);
-                        break;
-                    }
-                    default:
-                        break;
-                }
-            }
-            break;
-
-        default:
-            break;
-    }
+listener.on("message", () => {
+    // console.log("Message:", message);
 });
 
 listener.start();
