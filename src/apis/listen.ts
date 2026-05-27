@@ -358,9 +358,11 @@ export class Listener extends EventEmitter<ListenerEvents> {
                                     };
                                     let voipMsgObject;
                                     if (isGroup) {
+                                        const shortFromId = d.fromId;
+                                        const fromId = Object.keys(d.mapNoiseId ?? {}).find(k => d.mapNoiseId[k] === shortFromId)
                                         const groupMsg: TGroupMessage = {
                                             ...baseMsg,
-                                            uidFrom: String(d.groupNoiseId ?? d.hostCall ?? "0"),
+                                            uidFrom: fromId as string,
                                             idTo: String(d.groupNoiseId),
                                             cmd: 521,
                                             mentions: undefined,
