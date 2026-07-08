@@ -9,6 +9,8 @@ import { ZaloApiError } from "../Errors/ZaloApiError.js";
 import type { ContextSession } from "../context.js";
 import { type SeenMessage, GroupSeenMessage, UserSeenMessage } from "../models/SeenMessage.js";
 import { type DeliveredMessage, UserDeliveredMessage, GroupDeliveredMessage } from "../models/DeliveredMessage.js";
+import type { API } from "../apis.js";
+import type { LabelData } from "../models/index.js";
 
 type UploadEventData = {
     fileUrl: string;
@@ -38,6 +40,13 @@ export type OnMessageCallback = (message: Message) => unknown;
 export type OnClosedCallback = (code: CloseReason, reason: string) => unknown;
 export type OnErrorCallback = (error: unknown) => unknown;
 
+export type LabelEventData = {
+    labelData: LabelData[];
+    added: LabelData[];
+    updated: LabelData[];
+    removed: LabelData[];
+};
+
 export enum CloseReason {
     ManualClosure = 1000,
     AbnormalClosure = 1006,
@@ -63,6 +72,7 @@ interface ListenerEvents {
     group_event: [data: GroupEvent];
     cipher_key: [key: string];
     voip: [data: { caller: CallerInfo, rawData: Record<string, unknown> }];
+    label_event: [data: LabelEventData];
 }
 
 export class Listener extends EventEmitter<ListenerEvents> {
@@ -92,9 +102,14 @@ export class Listener extends EventEmitter<ListenerEvents> {
 
     private id = 0;
 
+    private labelSnapshot: Map<number, LabelData> | null = null;
+    private labelSyncTimer: Timer | null = null;
+    private static readonly LABEL_SYNC_DEBOUNCE_MS = 1000;
+
     constructor(
         private ctx: ContextSession,
         private urls: string[],
+        private api: API,
     ) {
         super();
         if (!ctx.cookie) throw new ZaloApiError("Cookie is not available");
@@ -128,6 +143,12 @@ export class Listener extends EventEmitter<ListenerEvents> {
         this.onMessageCallback = () => {};
     }
 
+    public override emit<K extends keyof ListenerEvents>(event: K, ...args: ListenerEvents[K]): boolean {
+        logger(this.ctx).verbose(`[Listener] event: ${String(event)}`, ...args);
+        const superEmit = super.emit.bind(this) as (event: K, ...args: ListenerEvents[K]) => boolean;
+        return superEmit(event, ...args);
+    }
+
     /**
      * @deprecated Use `on` method instead
      */
@@ -154,6 +175,50 @@ export class Listener extends EventEmitter<ListenerEvents> {
      */
     public onMessage(cb: OnMessageCallback) {
         this.onMessageCallback = cb;
+    }
+
+    private syncLabelConversations() {
+        if (this.labelSyncTimer) return;
+
+        this.labelSyncTimer = setTimeout(() => {
+            this.labelSyncTimer = null;
+            void this.runLabelSync();
+        }, Listener.LABEL_SYNC_DEBOUNCE_MS);
+    }
+
+    private async runLabelSync() {
+        try {
+            const { labelData } = await this.api.getLabels();
+            const previous = this.labelSnapshot;
+            const next = new Map(labelData.map((label) => [label.id, label]));
+
+            if (previous) {
+                const added: LabelData[] = [];
+                const updated: LabelData[] = [];
+                const removed: LabelData[] = [];
+
+                for (const [id, label] of next) {
+                    const prevLabel = previous.get(id);
+                    if (!prevLabel) {
+                        added.push(label);
+                    } else if (JSON.stringify(prevLabel) !== JSON.stringify(label)) {
+                        updated.push(label);
+                    }
+                }
+
+                for (const [id, label] of previous) {
+                    if (!next.has(id)) removed.push(label);
+                }
+
+                if (added.length || updated.length || removed.length) {
+                    this.emit("label_event", { labelData, added, updated, removed });
+                }
+            }
+
+            this.labelSnapshot = next;
+        } catch (error) {
+            logger(this.ctx).error("Failed to sync label conversations", error);
+        }
     }
 
     private canRetry(code: CloseReason) {
@@ -229,8 +294,12 @@ export class Listener extends EventEmitter<ListenerEvents> {
         };
 
         ws.onerror = (event) => {
-            this.onErrorCallback(event);
-            this.emit("error", event);
+            try {
+                this.onErrorCallback(event);
+                this.emit("error", event);
+            } catch {
+                // Suppress unhandled error to prevent app crash
+            }
         };
 
         ws.onmessage = async (event) => {
@@ -301,9 +370,9 @@ export class Listener extends EventEmitter<ListenerEvents> {
                         }
                     }
                 }
-
                 if (version == 1 && cmd == 601 && subCmd == 0) {
                     const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
+                    console.log(JSON.stringify(parsedData));
                     const { controls } = parsedData;
                     for (const control of controls) {
                         if (control.content.act_type == "voip") {
@@ -449,6 +518,8 @@ export class Listener extends EventEmitter<ListenerEvents> {
                             );
                             if (friendEvent.isSelf && !this.selfListen) continue;
                             this.emit("friend_event", friendEvent);
+                        } else if (control.content.act_type == "label_convers") {
+                            this.syncLabelConversations();
                         }
                     }
                 }
@@ -635,6 +706,8 @@ export class Listener extends EventEmitter<ListenerEvents> {
         this.ws = null;
         this.cipherKey = undefined;
         if (this.pingInterval) clearInterval(this.pingInterval);
+        if (this.labelSyncTimer) clearTimeout(this.labelSyncTimer);
+        this.labelSyncTimer = null;
     }
 }
 

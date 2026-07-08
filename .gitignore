@@ -134,3 +134,4 @@ cookies.json
 credentials.json
 /.dev
 test/**/*.test.*
+.npmrc

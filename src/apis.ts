@@ -302,7 +302,7 @@ export class API {
 
     constructor(ctx: ContextSession, zpwServiceMap: ZPWServiceMap, wsUrls: string[]) {
         this.zpwServiceMap = zpwServiceMap;
-        this.listener = new Listener(ctx, wsUrls);
+        this.listener = new Listener(ctx, wsUrls, this);
 
         this.changeGroupOwner = changeGroupOwnerFactory(ctx, this);
         this.getLabels = getLabelsFactory(ctx, this);

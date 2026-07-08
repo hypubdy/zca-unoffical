@@ -56,7 +56,7 @@ function generateAPIsFile() {
         emptyNewLine +
         "    constructor(ctx: ContextSession, zpwServiceMap: ZPWServiceMap, wsUrls: string[]) {\n" +
         "        this.zpwServiceMap = zpwServiceMap;\n" +
-        "        this.listener = new Listener(ctx, wsUrls);\n" +
+        "        this.listener = new Listener(ctx, wsUrls, this);\n" +
         emptyNewLine +
         constructorLines.join("\n") +
         emptyNewLine +
