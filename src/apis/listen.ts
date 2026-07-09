@@ -213,6 +213,11 @@ export class Listener extends EventEmitter<ListenerEvents> {
                 if (added.length || updated.length || removed.length) {
                     this.emit("label_event", { labelData, added, updated, removed });
                 }
+            } else {
+                // First sync after (re)connect: no snapshot to diff against, so emit the
+                // full state as `updated` — consumers resync from labelData and catch up
+                // on any changes missed while offline.
+                this.emit("label_event", { labelData, added: [], updated: labelData, removed: [] });
             }
 
             this.labelSnapshot = next;
@@ -273,6 +278,10 @@ export class Listener extends EventEmitter<ListenerEvents> {
         ws.onopen = () => {
             this.onConnectedCallback();
             this.emit("connected");
+            // Sync labels on every (re)connect: first connect emits the full state,
+            // reconnects diff against the kept snapshot and only emit real changes,
+            // so label updates missed while disconnected are never lost.
+            this.syncLabelConversations();
         };
 
         ws.onclose = (event) => {
